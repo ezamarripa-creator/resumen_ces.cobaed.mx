@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>COBAED Dashboard | Planeaciones Docentes por Parcial</title>
+    <!-- Plotly CDN -->
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js" charset="utf-8"></script>
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #f4f7fc;
+            font-family: 'Inter', sans-serif;
+            padding: 30px 24px 50px 24px;
+            color: #1a2c3e;
+        }
+
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            margin-bottom: 28px;
+            gap: 15px;
+        }
+        .title-section h1 {
+            font-family: 'Poppins', sans-serif;
+            font-weight: 700;
+            font-size: 1.9rem;
+            background: linear-gradient(135deg, #1E3C5F, #2A5F8A);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            letter-spacing: -0.3px;
+        }
+        .title-section p {
+            color: #4a627a;
+            font-weight: 500;
+            margin-top: 6px;
+            font-size: 0.9rem;
+        }
+        .upload-area {
+            background: white;
+            border-radius: 60px;
+            padding: 8px 18px;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid #e2e8f0;
+        }
+        .upload-label {
+            background: #1e5a88;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .upload-label:hover {
+            background: #0f4368;
+        }
+        #file-info {
+            font-size: 0.8rem;
+            color: #2c5a7a;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 20px;
+            margin-bottom: 35px;
+        }
+        .kpi-card {
+            background: white;
+            border-radius: 28px;
+            padding: 20px 18px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.02), 0 2px 6px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+        .kpi-card h4 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            color: #5c7a9a;
+            margin-bottom: 12px;
+        }
+        .kpi-value {
+            font-size: 2.6rem;
+            font-weight: 800;
+            color: #1e4663;
+            line-height: 1;
+        }
+        .kpi-sub {
+            font-size: 0.75rem;
+            color: #7191b0;
+            margin-top: 8px;
+        }
+        .filters-bar {
+            background: white;
+            border-radius: 28px;
+            padding: 18px 24px;
+            margin-bottom: 30px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            align-items: flex-end;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+            border: 1px solid #eef3fa;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 150px;
+        }
+        .filter-group label {
+            font-weight: 600;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: #4f7ea3;
+        }
+        select, input {
+            background: #f8fafd;
+            border: 1px solid #cbdde9;
+            padding: 8px 14px;
+            border-radius: 40px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            outline: none;
+            transition: 0.2s;
+        }
+        select:focus, input:focus {
+            border-color: #2a6b9e;
+        }
+        button {
+            background: #eef3fc;
+            border: none;
+            padding: 8px 22px;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.8rem;
+        }
+        .btn-primary {
+            background: #1e5a88;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #124267;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 28px;
+            margin-bottom: 40px;
+        }
+        .chart-card {
+            background: white;
+            border-radius: 28px;
+            padding: 18px 16px 12px 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.03);
+            transition: all 0.2s;
+            border: 1px solid #eef2f8;
+        }
+        .chart-title {
+            font-weight: 700;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #1f486b;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        .ranking-table {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        th, td {
+            padding: 12px 8px;
+            text-align: left;
+            border-bottom: 1px solid #e2edf7;
+        }
+        th {
+            color: #2c628b;
+            font-weight: 600;
+        }
+        .badge {
+            background: #eef2ff;
+            padding: 4px 12px;
+            border-radius: 50px;
+            font-weight: 500;
+            font-size: 0.7rem;
+        }
+        .critical {
+            background: #ffe6e5;
+            color: #b13e3e;
+        }
+        .footer-note {
+            text-align: center;
+            margin-top: 40px;
+            color: #6f8eaa;
+            font-size: 0.75rem;
+        }
+        @media (max-width: 700px) {
+            body { padding: 20px 16px; }
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard-container">
+    <div class="header">
+        <div class="title-section">
+            <h1><i class="fas fa-chalkboard-user" style="color: #2a6b9e;"></i> COBAED · Planeación Académica</h1>
+            <p>Indicadores estratégicos · Cumplimiento docente por plantel y parcial</p>
+        </div>
+        <div class="upload-area">
+            <i class="fas fa-cloud-upload-alt" style="color: #1e5a88;"></i>
+            <label class="upload-label" for="json-upload">
+                <i class="fas fa-file-upload"></i> Subir JSON
+            </label>
+            <input type="file" id="json-upload" accept=".json" style="display: none;">
+            <span id="file-info">Ningún archivo cargado</span>
+        </div>
+    </div>
+
+    <!-- KPIs dinámicos -->
+    <div class="kpi-grid" id="kpi-container">
+        <div class="kpi-card"><h4>Total docentes</h4><div class="kpi-value">-</div><div class="kpi-sub">matrículas únicas</div></div>
+        <div class="kpi-card"><h4>Planeaciones registradas</h4><div class="kpi-value">-</div><div class="kpi-sub">suma total (parcial seleccionado)</div></div>
+        <div class="kpi-card"><h4>Promedio x docente</h4><div class="kpi-value">-</div><div class="kpi-sub">planeaciones / docente</div></div>
+        <div class="kpi-card"><h4>Docentes activos (≥1 plan)</h4><div class="kpi-value">-</div><div class="kpi-sub">participación</div></div>
+        <div class="kpi-card"><h4>% Cumplimiento institucional</h4><div class="kpi-value">-</div><div class="kpi-sub">meta esperada por parcial: 6 planeaciones</div></div>
+    </div>
+
+    <!-- Filtros con PARCIAL como filtro principal -->
+    <div class="filters-bar" id="filters-panel">
+        <div class="filter-group"><label>📚 Filtrar por PARCIAL</label>
+            <select id="filter-parcial-select">
+                <option value="1">1er Parcial</option>
+                <option value="2">2do Parcial</option>
+                <option value="3">3er Parcial</option>
+            </select>
+        </div>
+        <div class="filter-group"><label>Plantel</label><select id="filter-plantel"><option value="all">Todos</option></select></div>
+        <div class="filter-group"><label>Turno</label><select id="filter-turno"><option value="all">Todos</option><option value="Mat">Matutino</option><option value="Vesp">Vespertino</option></select></div>
+        <div class="filter-group"><label>Estatus cumplimiento</label><select id="filter-estatus"><option value="all">Todos</option><option value="Alto">Alto (>70%)</option><option value="Medio">Medio (41-70%)</option><option value="Bajo">Bajo (0-40%)</option><option value="SinRegistro">Sin registro (0)</option></select></div>
+        <div class="filter-group"><label>Docente (nombre)</label><input type="text" id="filter-docente" placeholder="Buscar docente..."></div>
+        <div class="filter-group"><button id="reset-filters" class="btn-primary"><i class="fas fa-undo-alt"></i> Reiniciar</button></div>
+    </div>
+
+    <!-- gráficos principales -->
+    <div class="charts-grid">
+        <div class="chart-card"><div class="chart-title"><i class="fas fa-chart-simple"></i> Cumplimiento por Plantel (Heatmap)</div><div id="heatmap-plantel" style="height: 380px;"></div></div>
+        <div class="chart-card"><div class="chart-title"><i class="fas fa-trophy"></i> Ranking Docentes Top 10</div><div id="top-docentes" style="height: 380px;"></div></div>
+        <div class="chart-card"><div class="chart-title"><i class="fas fa-chart-pie"></i> Comparativa entre Parciales</div><div id="comparativa-parciales" style="height: 350px;"></div></div>
+        <div class="chart-card"><div class="chart-title"><i class="fas fa-school"></i> Planeaciones por Turno</div><div id="turno-bar" style="height: 350px;"></div></div>
+        <div class="chart-card full-width"><div class="chart-title"><i class="fas fa-list-check"></i> Tabla de Planteles Críticos & Ranking</div><div id="planteles-table" class="ranking-table"></div></div>
+        <div class="chart-card full-width"><div class="chart-title"><i class="fas fa-user-graduate"></i> Docentes sin registros / Rezagados (en parcial actual)</div><div id="docentes-rezagados-table" style="max-height: 300px; overflow-y: auto;"></div></div>
+    </div>
+    <div class="footer-note">📊 Dashboard dinámico - El filtro por PARCIAL actualiza todos los indicadores. Los datos se recalculan mostrando solo las planeaciones del período seleccionado. Meta esperada por docente por parcial: 6 planeaciones.</div>
+</div>
+
+<script>
+    let originalData = [];
+    let filteredData = [];
+    let METAS_POR_PARCIAL = 6;   // 6 planeaciones esperadas por docente en cada parcial
+    
+    // Obtener el número de parcial seleccionado
+    function getSelectedParcial() {
+        return parseInt(document.getElementById('filter-parcial-select').value);
+    }
+    
+    // Para cada registro, obtener el valor del parcial según selección
+    function getPlaneacionValueByParcial(row, parcial) {
+        if(parcial === 1) return row["1ER PARCIAL ces.cobaed.mx"] || 0;
+        if(parcial === 2) return row["2DO PARCIAL ces.cobaed.mx"] || 0;
+        if(parcial === 3) return row["3ER PARCIAL ces.cobaed.mx"] || 0;
+        return 0;
+    }
+    
+    function updateDashboard() {
+        if (!filteredData.length && originalData.length === 0) return;
+        const parcialActual = getSelectedParcial();
+        const data = filteredData.length ? filteredData : originalData;
+        
+        // Para cada docente, sumar solo las planeaciones del parcial seleccionado
+        let docenteMap = new Map();
+        data.forEach(d => {
+            const mat = d.matricula;
+            const planeacionParcial = getPlaneacionValueByParcial(d, parcialActual);
+            if(!docenteMap.has(mat)) {
+                docenteMap.set(mat, {
+                    nombre: (d.docente || "").trim(),
+                    plantel: d.plantel,
+                    turno: d.turno,
+                    planeaciones: 0,
+                    p1: d["1ER PARCIAL ces.cobaed.mx"] || 0,
+                    p2: d["2DO PARCIAL ces.cobaed.mx"] || 0,
+                    p3: d["3ER PARCIAL ces.cobaed.mx"] || 0
+                });
+            }
+            let doc = docenteMap.get(mat);
+            doc.planeaciones += planeacionParcial;
+            // mantener actualizados los parciales por si hay múltiples registros del mismo docente
+            doc.p1 = (doc.p1 || 0) + (d["1ER PARCIAL ces.cobaed.mx"] || 0);
+            doc.p2 = (doc.p2 || 0) + (d["2DO PARCIAL ces.cobaed.mx"] || 0);
+            doc.p3 = (doc.p3 || 0) + (d["3ER PARCIAL ces.cobaed.mx"] || 0);
+        });
+        
+        const docentesArray = Array.from(docenteMap.values());
+        const totalDocentes = docentesArray.length;
+        const totalPlaneaciones = docentesArray.reduce((sum, d) => sum + d.planeaciones, 0);
+        const promedio = totalDocentes ? (totalPlaneaciones / totalDocentes).toFixed(1) : 0;
+        const docentesActivos = docentesArray.filter(d => d.planeaciones > 0).length;
+        const planeacionesEsperadas = totalDocentes * METAS_POR_PARCIAL;
+        const cumplimientoInst = planeacionesEsperadas ? ((totalPlaneaciones / planeacionesEsperadas) * 100).toFixed(1) : 0;
+        
+        // actualizar KPIs
+        const kpis = document.querySelectorAll('.kpi-card');
+        kpis[0].querySelector('.kpi-value').innerText = totalDocentes;
+        kpis[1].querySelector('.kpi-value').innerText = totalPlaneaciones;
+        kpis[2].querySelector('.kpi-value').innerText = promedio;
+        kpis[3].querySelector('.kpi-value').innerText = docentesActivos;
+        kpis[4].querySelector('.kpi-value').innerHTML = `${cumplimientoInst}%`;
+        
+        // renderizar gráficos con los datos filtrados por parcial
+        renderHeatmapPlantel(docentesArray, parcialActual);
+        renderTopDocentes(docentesArray, parcialActual);
+        renderComparativaParciales(docentesArray);
+        renderTurnoChart(docentesArray, parcialActual);
+        renderPlantelesTable(docentesArray, parcialActual);
+        renderDocentesRezagados(docentesArray, parcialActual);
+    }
+    
+    function renderHeatmapPlantel(docentesArray, parcialActual) {
+        const mapPlantel = new Map();
+        docentesArray.forEach(d => {
+            const plantel = d.plantel || "SIN PLANTEL";
+            if(!mapPlantel.has(plantel)) mapPlantel.set(plantel, { sumaPlaneaciones: 0, countDocentes: 0 });
+            let obj = mapPlantel.get(plantel);
+            obj.sumaPlaneaciones += d.planeaciones;
+            obj.countDocentes += 1;
+        });
+        let plantelesArr = Array.from(mapPlantel.entries()).map(([name, vals]) => {
+            let esperadoPlantel = vals.countDocentes * METAS_POR_PARCIAL;
+            let cumplimiento = esperadoPlantel ? (vals.sumaPlaneaciones / esperadoPlantel * 100) : 0;
+            return { plantel: name, cumplimiento: parseFloat(cumplimiento.toFixed(1)), planeaciones: vals.sumaPlaneaciones, docentes: vals.countDocentes };
+        }).sort((a,b) => b.cumplimiento - a.cumplimiento);
+        const labels = plantelesArr.map(p => p.plantel);
+        const values = plantelesArr.map(p => p.cumplimiento);
+        const colors = values.map(v => v >= 70 ? '#2c7a47' : (v >= 40 ? '#e6b422' : '#c13b3b'));
+        const trace = {
+            x: labels, y: values, type: 'bar', marker: { color: colors },
+            text: values.map(v => v.toFixed(1)+'%'), textposition: 'outside',
+            hovertemplate: '%{x}: %{y}%<extra></extra>'
+        };
+        const layout = { margin: { t: 30, b: 80 }, xaxis: { tickangle: -35 }, yaxis: { title: `% Cumplimiento Parcial ${parcialActual}` }, plot_bgcolor: '#fefefe', paper_bgcolor: 'white' };
+        Plotly.newPlot('heatmap-plantel', [trace], layout, {responsive: true});
+    }
+    
+    function renderTopDocentes(docentesArray, parcialActual) {
+        let ranking = [...docentesArray].sort((a,b) => b.planeaciones - a.planeaciones).slice(0,10);
+        const names = ranking.map(r => r.nombre.split(' ')[0] + " " + (r.nombre.split(' ')[1] || ''));
+        const planes = ranking.map(r => r.planeaciones);
+        const trace = { x: names, y: planes, type: 'bar', marker: { color: '#2f7fb5' }, text: planes, textposition: 'auto' };
+        const layout = { margin: { t: 20, b: 80 }, yaxis: { title: `Planeaciones (Parcial ${parcialActual})` }, xaxis: { tickangle: -25 } };
+        Plotly.newPlot('top-docentes', [trace], layout, {responsive: true});
+    }
+    
+    function renderComparativaParciales(docentesArray) {
+        let sum1 = docentesArray.reduce((acc, d) => acc + (d.p1 || 0), 0);
+        let sum2 = docentesArray.reduce((acc, d) => acc + (d.p2 || 0), 0);
+        let sum3 = docentesArray.reduce((acc, d) => acc + (d.p3 || 0), 0);
+        const trace = {
+            x: ['1er Parcial', '2do Parcial', '3er Parcial'],
+            y: [sum1, sum2, sum3],
+            type: 'bar',
+            marker: { color: ['#3b82f6', '#f59e0b', '#10b981'] },
+            text: [sum1, sum2, sum3],
+            textposition: 'auto'
+        };
+        const layout = { margin: { t: 30 }, yaxis: { title: 'Total planeaciones registradas' } };
+        Plotly.newPlot('comparativa-parciales', [trace], layout, {responsive: true});
+    }
+    
+    function renderTurnoChart(docentesArray, parcialActual) {
+        let turnoMat = 0, turnoVesp = 0;
+        docentesArray.forEach(d => {
+            if(d.turno === 'Mat') turnoMat += d.planeaciones;
+            else if(d.turno === 'Vesp') turnoVesp += d.planeaciones;
+        });
+        const trace = { x: ['Matutino', 'Vespertino'], y: [turnoMat, turnoVesp], type: 'bar', marker: { color: ['#3b7cbf', '#d97706'] } };
+        Plotly.newPlot('turno-bar', [trace], { yaxis: { title: `Planeaciones Parcial ${parcialActual}` } }, {responsive: true});
+    }
+    
+    function renderPlantelesTable(docentesArray, parcialActual) {
+        let plantelMap = new Map();
+        docentesArray.forEach(d => {
+            const plantel = d.plantel;
+            if(!plantelMap.has(plantel)) plantelMap.set(plantel, { planeaciones: 0, docentesSet: new Set() });
+            let p = plantelMap.get(plantel);
+            p.planeaciones += d.planeaciones;
+            p.docentesSet.add(d.nombre);
+        });
+        let rows = [];
+        for(let [plantel, vals] of plantelMap.entries()) {
+            let totalDocentes = vals.docentesSet.size;
+            let esperado = totalDocentes * METAS_POR_PARCIAL;
+            let cumplimiento = esperado ? (vals.planeaciones / esperado * 100) : 0;
+            rows.push({ plantel, planeaciones: vals.planeaciones, docentes: totalDocentes, cumplimiento: cumplimiento.toFixed(1) });
+        }
+        rows.sort((a,b) => b.planeaciones - a.planeaciones);
+        let html = `<table style="width:100%"><thead><tr><th>Plantel</th><th>Planeaciones (P${parcialActual})</th><th>Docentes</th><th>% Cumplimiento</th><th>Estatus</th></tr></thead><tbody>`;
+        rows.forEach(r => {
+            let estatusClass = r.cumplimiento >= 70 ? 'badge' : (r.cumplimiento >= 40 ? 'badge' : 'badge critical');
+            let label = r.cumplimiento >= 70 ? '✔️ Alto' : (r.cumplimiento >= 40 ? '⚠️ Medio' : '🔴 Crítico');
+            html += `<tr><td>${r.plantel}</td><td>${r.planeaciones}</td><td>${r.docentes}</td><td>${r.cumplimiento}%</td><td><span class="${estatusClass}">${label}</span></td></tr>`;
+        });
+        html += `</tbody></table><div style="margin-top:8px; font-size:0.7rem;">Meta esperada por docente en parcial ${parcialActual}: ${METAS_POR_PARCIAL} planeaciones</div>`;
+        document.getElementById('planteles-table').innerHTML = html;
+    }
+    
+    function renderDocentesRezagados(docentesArray, parcialActual) {
+        // docentes sin ninguna planeación en el parcial actual
+        let sinRegistro = docentesArray.filter(d => d.planeaciones === 0);
+        let rezagadosParcial = docentesArray.filter(d => {
+            if(parcialActual === 1) return d.p1 === 0 && d.planeaciones === 0;
+            if(parcialActual === 2) return d.p2 === 0;
+            if(parcialActual === 3) return d.p3 === 0;
+            return false;
+        }).filter(d => d.planeaciones === 0); // los que no han registrado nada en este parcial
+        
+        let html = `<div style="margin-bottom: 10px;"><strong>🔴 Docentes sin ninguna planeación en el ${parcialActual}° Parcial (${sinRegistro.length})</strong></div>`;
+        if(sinRegistro.length) {
+            html += `<table style="font-size:0.75rem"><thead><tr><th>Docente</th><th>Plantel</th><th>Estado</th></tr></thead><tbody>`;
+            sinRegistro.slice(0,15).forEach(d => { html += `<tr><td>${d.nombre}</td><td>${d.plantel}</td><td>Sin planeaciones en P${parcialActual}</td></tr>`; });
+            if(sinRegistro.length>15) html+=`<tr><td colspan="3">... y ${sinRegistro.length-15} más</td></tr>`;
+            html += `</tbody></table>`;
+        } else html += `<div class="badge">✅ Todos los docentes tienen al menos una planeación en el parcial ${parcialActual}</div>`;
+        
+        html += `<div style="margin-top: 20px;"><strong>⚠️ Docentes con rezago específico (sin registro en el parcial actual)</strong> (${rezagadosParcial.length})</div>`;
+        if(rezagadosParcial.length) {
+            html += `<table style="font-size:0.75rem; margin-top:6px"><thead><tr><th>Docente</th><th>Plantel</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>`;
+            rezagadosParcial.slice(0,12).forEach(d => { 
+                html += `<tr><td>${d.nombre}</td><td>${d.plantel}</td><td>${d.p1>0?'✓': '✗'}</td><td>${d.p2>0?'✓': '✗'}</td><td>${d.p3>0?'✓': '✗'}</td></tr>`;
+            });
+            if(rezagadosParcial.length>12) html+=`<tr><td colspan="5">... y ${rezagadosParcial.length-12} más</td></tr>`;
+            html += `</tbody></table>`;
+        } else html += `<div class="badge">✨ Sin rezago de parciales en este período</div>`;
+        document.getElementById('docentes-rezagados-table').innerHTML = html;
+    }
+    
+    // Filtros combinados (incluyendo parcial, plantel, turno, estatus, docente)
+    function applyFilters() {
+        if(!originalData.length) {
+            filteredData = [];
+            updateDashboard();
+            return;
+        }
+        const parcialActual = getSelectedParcial();
+        const plantelVal = document.getElementById('filter-plantel').value;
+        const turnoVal = document.getElementById('filter-turno').value;
+        const estatusVal = document.getElementById('filter-estatus').value;
+        const docenteQuery = document.getElementById('filter-docente').value.toLowerCase().trim();
+        
+        // primero calcular por docente para determinar estatus según el parcial actual
+        let tempMap = new Map();
+        originalData.forEach(d => {
+            const mat = d.matricula;
+            if(!tempMap.has(mat)) tempMap.set(mat, { totalParcial: 0, planeacionesObj: [], datos: [] });
+            let obj = tempMap.get(mat);
+            const valorParcial = getPlaneacionValueByParcial(d, parcialActual);
+            obj.totalParcial += valorParcial;
+            obj.datos.push(d);
+        });
+        let estatusDocenteMap = new Map();
+        for(let [mat, vals] of tempMap.entries()) {
+            let porcentaje = (vals.totalParcial / METAS_POR_PARCIAL) * 100;
+            let estatus = 'SinRegistro';
+            if(vals.totalParcial === 0) estatus = 'SinRegistro';
+            else if(porcentaje >= 70) estatus = 'Alto';
+            else if(porcentaje >= 41) estatus = 'Medio';
+            else estatus = 'Bajo';
+            estatusDocenteMap.set(mat, estatus);
+        }
+        
+        let filtered = [];
+        for(let row of originalData) {
+            let mat = row.matricula;
+            let docenteNombre = (row.docente || "").trim().toLowerCase();
+            if(plantelVal !== 'all' && row.plantel !== plantelVal) continue;
+            if(turnoVal !== 'all' && row.turno !== turnoVal) continue;
+            if(docenteQuery && !docenteNombre.includes(docenteQuery)) continue;
+            let estatusDoc = estatusDocenteMap.get(mat) || 'SinRegistro';
+            if(estatusVal !== 'all' && estatusDoc !== estatusVal) continue;
+            filtered.push(row);
+        }
+        filteredData = filtered;
+        updateDashboard();
+        populatePlantelFilter(originalData);
+    }
+    
+    function populatePlantelFilter(data) {
+        let plantelesSet = new Set();
+        data.forEach(d => { if(d.plantel) plantelesSet.add(d.plantel); });
+        let select = document.getElementById('filter-plantel');
+        let current = select.value;
+        select.innerHTML = '<option value="all">Todos</option>';
+        Array.from(plantelesSet).sort().forEach(p => { select.innerHTML += `<option value="${p}">${p}</option>`; });
+        if(current && current !== 'all' && plantelesSet.has(current)) select.value = current;
+        else select.value = 'all';
+    }
+    
+    function resetFilters() {
+        document.getElementById('filter-plantel').value = 'all';
+        document.getElementById('filter-turno').value = 'all';
+        document.getElementById('filter-estatus').value = 'all';
+        document.getElementById('filter-docente').value = '';
+        document.getElementById('filter-parcial-select').value = '1';
+        applyFilters();
+    }
+    
+    // Event Listeners
+    document.getElementById('json-upload').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                const jsonData = JSON.parse(evt.target.result);
+                if(Array.isArray(jsonData) && jsonData.length) {
+                    originalData = jsonData;
+                    filteredData = [...originalData];
+                    document.getElementById('file-info').innerHTML = `<i class="fas fa-check-circle"></i> ${file.name} (${originalData.length} registros)`;
+                    populatePlantelFilter(originalData);
+                    applyFilters();
+                } else throw new Error('Formato inválido, se requiere array de objetos');
+            } catch(err) { alert('Error al leer JSON: '+err.message); }
+        };
+        reader.readAsText(file);
+    });
+    
+    document.getElementById('filter-parcial-select').addEventListener('change', applyFilters);
+    document.getElementById('filter-plantel').addEventListener('change', applyFilters);
+    document.getElementById('filter-turno').addEventListener('change', applyFilters);
+    document.getElementById('filter-estatus').addEventListener('change', applyFilters);
+    document.getElementById('filter-docente').addEventListener('input', applyFilters);
+    document.getElementById('reset-filters').addEventListener('click', resetFilters);
+    
+    // inicialización
+    originalData = [];
+    filteredData = [];
+    updateDashboard();
+    document.getElementById('file-info').innerHTML = 'Ningún archivo cargado';
+</script>
+</body>
+</html>
