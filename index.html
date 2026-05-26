@@ -1,6 +1,43 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+
+    <script>
+    (function() {
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+      
+       document.addEventListener('keydown', function(e) {
+            const key = e.key.toLowerCase();
+            if ((e.ctrlKey && (key === 'u' || key === 's' || key === 'c' || key === 'i' || key === 'j')) ||
+                (e.ctrlKey && e.shiftKey && (key === 'i' || key === 'j' || key === 'c')) ||
+                e.key === 'F12') {
+                e.preventDefault();
+                return false;
+            }
+        });
+        
+        let devtoolsTriggered = false;
+        setInterval(function() {
+            if (devtoolsTriggered) return;
+            const before = new Date();
+            debugger; 
+            const after = new Date();
+            if (after - before > 100) { 
+                devtoolsTriggered = true;
+                document.body.innerHTML = '<div style="text-align:center; padding:50px; font-family:sans-serif;"><h1 style="color:#042C53;">⚠️ Acceso no autorizado</h1><p>El uso de herramientas de desarrollo no está permitido en este recurso institucional.</p><p style="font-size:14px; margin-top:30px;">🔒 COBAED · Dirección Académica</p></div>';
+            }
+        }, 2000);
+        
+        const style = document.createElement('style');
+        style.textContent = `body { user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }`;
+        document.head.appendChild(style);
+    })();
+    </script>
+
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>COBAED Dashboard | Planeaciones Docentes por Parcial</title>
@@ -63,25 +100,16 @@
             gap: 12px;
             border: 1px solid #e2e8f0;
         }
-        .upload-label {
-            background: #1e5a88;
-            color: white;
-            padding: 8px 20px;
+        .data-status {
+            background: #eef2fa;
             border-radius: 40px;
-            font-weight: 600;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .upload-label:hover {
-            background: #0f4368;
-        }
-        #file-info {
+            padding: 6px 16px;
             font-size: 0.8rem;
-            color: #2c5a7a;
+            font-weight: 500;
+            color: #1e5a88;
+        }
+        .data-status i {
+            margin-right: 6px;
         }
         .kpi-grid {
             display: grid;
@@ -230,6 +258,11 @@
             color: #6f8eaa;
             font-size: 0.75rem;
         }
+        .loader-overlay {
+            text-align: center;
+            padding: 20px;
+            color: #2a6b9e;
+        }
         @media (max-width: 700px) {
             body { padding: 20px 16px; }
             .charts-grid { grid-template-columns: 1fr; }
@@ -244,12 +277,10 @@
             <p>Indicadores estratégicos · Cumplimiento docente por plantel y parcial</p>
         </div>
         <div class="upload-area">
-            <i class="fas fa-cloud-upload-alt" style="color: #1e5a88;"></i>
-            <label class="upload-label" for="json-upload">
-                <i class="fas fa-file-upload"></i> Subir JSON
-            </label>
-            <input type="file" id="json-upload" accept=".json" style="display: none;">
-            <span id="file-info">Ningún archivo cargado</span>
+            <i class="fas fa-cloud-download-alt" style="color: #1e5a88;"></i>
+            <div class="data-status" id="data-status-indicator">
+                <i class="fas fa-spinner fa-pulse"></i> Cargando datos...
+            </div>
         </div>
     </div>
 
@@ -287,20 +318,26 @@
         <div class="chart-card full-width"><div class="chart-title"><i class="fas fa-list-check"></i> Tabla de Planteles Críticos & Ranking</div><div id="planteles-table" class="ranking-table"></div></div>
         <div class="chart-card full-width"><div class="chart-title"><i class="fas fa-user-graduate"></i> Docentes sin registros / Rezagados (en parcial actual)</div><div id="docentes-rezagados-table" style="max-height: 300px; overflow-y: auto;"></div></div>
     </div>
-    <div class="footer-note">📊 Dashboard dinámico - El filtro por PARCIAL actualiza todos los indicadores. Los datos se recalculan mostrando solo las planeaciones del período seleccionado. Meta esperada por docente por parcial: 6 planeaciones.</div>
+    <div class="footer-note">📊 Dashboard dinámico - Datos sincronizados desde repositorio (datos.json) · El filtro por PARCIAL actualiza todos los indicadores. Meta esperada por docente por parcial: 6 planeaciones.</div>
 </div>
 
 <script>
+    // ============================================================
+    // CONFIGURACIÓN GITHUB: obtiene datos.json desde la misma ruta relativa
+    // ============================================================
+    const GITHUB_DATA_URL = 'datos.json';   // Mismo directorio que index.html en GitHub
+    
     let originalData = [];
     let filteredData = [];
     let METAS_POR_PARCIAL = 6;   // 6 planeaciones esperadas por docente en cada parcial
+    let dataLoading = false;
     
     // Obtener el número de parcial seleccionado
     function getSelectedParcial() {
         return parseInt(document.getElementById('filter-parcial-select').value);
     }
     
-    // Para cada registro, obtener el valor del parcial según selección
+    // Para cada registro, obtener el valor del parcial según selección (campos adaptados del JSON)
     function getPlaneacionValueByParcial(row, parcial) {
         if(parcial === 1) return row["1ER PARCIAL ces.cobaed.mx"] || 0;
         if(parcial === 2) return row["2DO PARCIAL ces.cobaed.mx"] || 0;
@@ -308,12 +345,31 @@
         return 0;
     }
     
+    // Actualizar KPIs y gráficos a partir de filteredData (según filtros activos + parcial)
     function updateDashboard() {
-        if (!filteredData.length && originalData.length === 0) return;
+        if (!originalData.length) {
+            // Mostrar valores vacíos cuando no hay datos
+            const kpis = document.querySelectorAll('.kpi-card');
+            if(kpis.length) {
+                kpis[0].querySelector('.kpi-value').innerText = '-';
+                kpis[1].querySelector('.kpi-value').innerText = '-';
+                kpis[2].querySelector('.kpi-value').innerText = '-';
+                kpis[3].querySelector('.kpi-value').innerText = '-';
+                kpis[4].querySelector('.kpi-value').innerHTML = '-%';
+            }
+            document.getElementById('heatmap-plantel') && Plotly.newPlot('heatmap-plantel', [], {title: "Sin datos"});
+            document.getElementById('top-docentes') && Plotly.newPlot('top-docentes', [], {title: "Sin datos"});
+            document.getElementById('comparativa-parciales') && Plotly.newPlot('comparativa-parciales', [], {title: "Sin datos"});
+            document.getElementById('turno-bar') && Plotly.newPlot('turno-bar', [], {title: "Sin datos"});
+            document.getElementById('planteles-table').innerHTML = '<div class="loader-overlay">📂 No hay datos cargados</div>';
+            document.getElementById('docentes-rezagados-table').innerHTML = '<div class="loader-overlay">⬆️ Cargue un archivo JSON o espere la carga remota</div>';
+            return;
+        }
+        
         const parcialActual = getSelectedParcial();
         const data = filteredData.length ? filteredData : originalData;
         
-        // Para cada docente, sumar solo las planeaciones del parcial seleccionado
+        // Consolidar por docente (matrícula única) sumando solo planeaciones del parcial seleccionado
         let docenteMap = new Map();
         data.forEach(d => {
             const mat = d.matricula;
@@ -331,7 +387,7 @@
             }
             let doc = docenteMap.get(mat);
             doc.planeaciones += planeacionParcial;
-            // mantener actualizados los parciales por si hay múltiples registros del mismo docente
+            // Acumular también para comparativa general de parciales
             doc.p1 = (doc.p1 || 0) + (d["1ER PARCIAL ces.cobaed.mx"] || 0);
             doc.p2 = (doc.p2 || 0) + (d["2DO PARCIAL ces.cobaed.mx"] || 0);
             doc.p3 = (doc.p3 || 0) + (d["3ER PARCIAL ces.cobaed.mx"] || 0);
@@ -347,11 +403,13 @@
         
         // actualizar KPIs
         const kpis = document.querySelectorAll('.kpi-card');
-        kpis[0].querySelector('.kpi-value').innerText = totalDocentes;
-        kpis[1].querySelector('.kpi-value').innerText = totalPlaneaciones;
-        kpis[2].querySelector('.kpi-value').innerText = promedio;
-        kpis[3].querySelector('.kpi-value').innerText = docentesActivos;
-        kpis[4].querySelector('.kpi-value').innerHTML = `${cumplimientoInst}%`;
+        if(kpis.length >= 5) {
+            kpis[0].querySelector('.kpi-value').innerText = totalDocentes;
+            kpis[1].querySelector('.kpi-value').innerText = totalPlaneaciones;
+            kpis[2].querySelector('.kpi-value').innerText = promedio;
+            kpis[3].querySelector('.kpi-value').innerText = docentesActivos;
+            kpis[4].querySelector('.kpi-value').innerHTML = `${cumplimientoInst}%`;
+        }
         
         // renderizar gráficos con los datos filtrados por parcial
         renderHeatmapPlantel(docentesArray, parcialActual);
@@ -390,7 +448,7 @@
     
     function renderTopDocentes(docentesArray, parcialActual) {
         let ranking = [...docentesArray].sort((a,b) => b.planeaciones - a.planeaciones).slice(0,10);
-        const names = ranking.map(r => r.nombre.split(' ')[0] + " " + (r.nombre.split(' ')[1] || ''));
+        const names = ranking.map(r => r.nombre ? (r.nombre.split(' ')[0] + " " + (r.nombre.split(' ')[1] || '')) : "Docente");
         const planes = ranking.map(r => r.planeaciones);
         const trace = { x: names, y: planes, type: 'bar', marker: { color: '#2f7fb5' }, text: planes, textposition: 'auto' };
         const layout = { margin: { t: 20, b: 80 }, yaxis: { title: `Planeaciones (Parcial ${parcialActual})` }, xaxis: { tickangle: -25 } };
@@ -451,15 +509,7 @@
     }
     
     function renderDocentesRezagados(docentesArray, parcialActual) {
-        // docentes sin ninguna planeación en el parcial actual
         let sinRegistro = docentesArray.filter(d => d.planeaciones === 0);
-        let rezagadosParcial = docentesArray.filter(d => {
-            if(parcialActual === 1) return d.p1 === 0 && d.planeaciones === 0;
-            if(parcialActual === 2) return d.p2 === 0;
-            if(parcialActual === 3) return d.p3 === 0;
-            return false;
-        }).filter(d => d.planeaciones === 0); // los que no han registrado nada en este parcial
-        
         let html = `<div style="margin-bottom: 10px;"><strong>🔴 Docentes sin ninguna planeación en el ${parcialActual}° Parcial (${sinRegistro.length})</strong></div>`;
         if(sinRegistro.length) {
             html += `<table style="font-size:0.75rem"><thead><tr><th>Docente</th><th>Plantel</th><th>Estado</th></tr></thead><tbody>`;
@@ -468,13 +518,13 @@
             html += `</tbody></table>`;
         } else html += `<div class="badge">✅ Todos los docentes tienen al menos una planeación en el parcial ${parcialActual}</div>`;
         
-        html += `<div style="margin-top: 20px;"><strong>⚠️ Docentes con rezago específico (sin registro en el parcial actual)</strong> (${rezagadosParcial.length})</div>`;
-        if(rezagadosParcial.length) {
+        html += `<div style="margin-top: 20px;"><strong>⚠️ Docentes con rezago específico (sin registro en el parcial actual)</strong> (${sinRegistro.length})</div>`;
+        if(sinRegistro.length) {
             html += `<table style="font-size:0.75rem; margin-top:6px"><thead><tr><th>Docente</th><th>Plantel</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>`;
-            rezagadosParcial.slice(0,12).forEach(d => { 
+            sinRegistro.slice(0,12).forEach(d => { 
                 html += `<tr><td>${d.nombre}</td><td>${d.plantel}</td><td>${d.p1>0?'✓': '✗'}</td><td>${d.p2>0?'✓': '✗'}</td><td>${d.p3>0?'✓': '✗'}</td></tr>`;
             });
-            if(rezagadosParcial.length>12) html+=`<tr><td colspan="5">... y ${rezagadosParcial.length-12} más</td></tr>`;
+            if(sinRegistro.length>12) html+=`<tr><td colspan="5">... y ${sinRegistro.length-12} más</td></tr>`;
             html += `</tbody></table>`;
         } else html += `<div class="badge">✨ Sin rezago de parciales en este período</div>`;
         document.getElementById('docentes-rezagados-table').innerHTML = html;
@@ -497,7 +547,7 @@
         let tempMap = new Map();
         originalData.forEach(d => {
             const mat = d.matricula;
-            if(!tempMap.has(mat)) tempMap.set(mat, { totalParcial: 0, planeacionesObj: [], datos: [] });
+            if(!tempMap.has(mat)) tempMap.set(mat, { totalParcial: 0, datos: [] });
             let obj = tempMap.get(mat);
             const valorParcial = getPlaneacionValueByParcial(d, parcialActual);
             obj.totalParcial += valorParcial;
@@ -550,26 +600,36 @@
         applyFilters();
     }
     
-    // Event Listeners
-    document.getElementById('json-upload').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if(!file) return;
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            try {
-                const jsonData = JSON.parse(evt.target.result);
-                if(Array.isArray(jsonData) && jsonData.length) {
-                    originalData = jsonData;
-                    filteredData = [...originalData];
-                    document.getElementById('file-info').innerHTML = `<i class="fas fa-check-circle"></i> ${file.name} (${originalData.length} registros)`;
-                    populatePlantelFilter(originalData);
-                    applyFilters();
-                } else throw new Error('Formato inválido, se requiere array de objetos');
-            } catch(err) { alert('Error al leer JSON: '+err.message); }
-        };
-        reader.readAsText(file);
-    });
+    // Cargar datos desde GitHub (mismo directorio)
+    async function loadDataFromGitHub() {
+        const statusDiv = document.getElementById('data-status-indicator');
+        statusDiv.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Descargando datos.json...';
+        try {
+            const response = await fetch(GITHUB_DATA_URL, {
+                cache: "no-store",
+                headers: { "Cache-Control": "no-cache" }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status} - No se pudo obtener datos.json`);
+            const jsonData = await response.json();
+            if (Array.isArray(jsonData) && jsonData.length) {
+                originalData = jsonData;
+                filteredData = [...originalData];
+                statusDiv.innerHTML = `<i class="fas fa-check-circle"></i> ✅ Datos cargados (${originalData.length} registros) desde repositorio`;
+                populatePlantelFilter(originalData);
+                applyFilters();
+            } else {
+                throw new Error('El JSON no contiene un array válido');
+            }
+        } catch (error) {
+            console.error(error);
+            statusDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Error: ${error.message}. Usando demo?`;
+            originalData = [];
+            filteredData = [];
+            updateDashboard();
+        }
+    }
     
+    // Event Listeners
     document.getElementById('filter-parcial-select').addEventListener('change', applyFilters);
     document.getElementById('filter-plantel').addEventListener('change', applyFilters);
     document.getElementById('filter-turno').addEventListener('change', applyFilters);
@@ -577,11 +637,8 @@
     document.getElementById('filter-docente').addEventListener('input', applyFilters);
     document.getElementById('reset-filters').addEventListener('click', resetFilters);
     
-    // inicialización
-    originalData = [];
-    filteredData = [];
-    updateDashboard();
-    document.getElementById('file-info').innerHTML = 'Ningún archivo cargado';
+    // Inicialización: cargar datos del repositorio
+    loadDataFromGitHub();
 </script>
 </body>
 </html>
