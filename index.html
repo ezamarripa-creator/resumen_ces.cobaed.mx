@@ -38,7 +38,6 @@
     </script>
 
 
-
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Dashboard de Planeaciones Docentes — COBAED</title>
@@ -116,8 +115,8 @@
   .scroll::-webkit-scrollbar{width:8px}
   .scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
   footer{padding:20px;text-align:center;color:var(--muted);font-size:12px;border-top:1px solid var(--line);margin-top:30px}
-  .loading-state{text-align:center;padding:60px 20px}
-  .loading-state .spinner{width:40px;height:40px;border:3px solid var(--line);border-top-color:var(--primary);border-radius:50%;margin:0 auto 16px;animation:spin .8s linear infinite}
+  .loader-container{background:var(--panel);border-radius:14px;padding:28px;text-align:center;margin-bottom:20px;border:1px solid var(--line)}
+  .loader{display:inline-block;width:28px;height:28px;border:3px solid var(--line);border-radius:50%;border-top-color:var(--primary);animation:spin 0.8s linear infinite;margin-right:12px;vertical-align:middle}
   @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
@@ -132,31 +131,36 @@
     </div>
   </div>
   <div style="display:flex;gap:8px">
-    <button class="btn ghost" id="refreshBtn">Recargar datos</button>
+    <button class="btn ghost" id="refreshBtn">🔄 Recargar desde GitHub</button>
+    <button class="btn ghost" id="clearBtn">Limpiar datos</button>
+    <button class="btn" id="uploadBtn">Cargar JSON local</button>
+    <input type="file" id="fileInput" accept=".json,application/json" />
   </div>
 </header>
 
 <main>
-  <div id="loadingIndicator" class="loading-state" style="display:none">
-    <div class="spinner"></div>
-    <h3>Cargando datos desde el repositorio...</h3>
-    <p style="color:var(--muted)">Obteniendo archivo datos.json</p>
-  </div>
-
-  <div class="upload-card" id="infoCard">
+  <div class="upload-card" id="uploadCard" style="display: none;">
     <div class="left">
       <div class="icon">📁</div>
       <div>
-        <div style="font-weight:600">Fuente de datos: GitHub</div>
-        <div style="color:var(--muted);font-size:13px">Los datos se obtienen automáticamente desde <code>datos.json</code> en el repositorio.</div>
+        <div style="font-weight:600">Sube tu archivo <code>datos.json</code> localmente</div>
+        <div style="color:var(--muted);font-size:13px">O usa el botón "Recargar desde GitHub" para leer el archivo del repositorio.</div>
       </div>
     </div>
-    <button class="btn" id="manualRefreshBtn">Actualizar desde GitHub</button>
+    <button class="btn" onclick="document.getElementById('fileInput').click()">Seleccionar archivo</button>
+  </div>
+
+  <div id="loaderData" class="loader-container" style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+    <div class="loader"></div> Cargando datos desde el repositorio GitHub (datos.json) ...
   </div>
 
   <div id="dashboard" style="display:none">
     <!-- FILTROS -->
     <div class="filters" id="filters">
+      <label>Tipo de planeaciones<select id="fModo">
+        <option value="total">Total de planeaciones</option>
+        <option value="aprobadas">Aprobadas</option>
+      </select></label>
       <label>Plantel<select id="fPlantel"><option value="">Todos</option></select></label>
       <label>Docente<select id="fDocente"><option value="">Todos</option></select></label>
       <label>Turno<select id="fTurno"><option value="">Todos</option></select></label>
@@ -166,6 +170,10 @@
         <option value="2">Tiene 2do parcial</option>
         <option value="3">Tiene 3er parcial</option>
         <option value="0">Sin captura</option>
+      </select></label>
+      <label>Aprobación<select id="fAprob">
+        <option value="">Todos</option>
+        <option value="si">Solo con aprobadas</option>
       </select></label>
     </div>
 
@@ -222,57 +230,43 @@
     </div>
   </div>
 
-  <div id="emptyState" class="empty">
-    <h2>Cargando datos desde GitHub...</h2>
-    <p>Esperando respuesta del archivo <code>datos.json</code>.</p>
-  </div>
-  <div id="errorState" class="empty" style="display:none">
-    <h2>⚠️ Error al cargar los datos</h2>
-    <p>No se pudo obtener el archivo <code>datos.json</code> desde el repositorio.</p>
-    <button class="btn" id="retryBtn">Reintentar</button>
+  <div id="emptyState" class="empty" style="display:none">
+    <h2>No se pudieron cargar los datos o aún no hay información</h2>
+    <p>Verifica que el archivo <code>datos.json</code> esté disponible en la misma ruta que este dashboard en GitHub Pages o repositorio. Usa el botón "Recargar desde GitHub" para reintentar.</p>
   </div>
 </main>
 
-<footer>Dashboard generado para COBAED · Plotly.js · Datos obtenidos desde GitHub (datos.json)</footer>
+<footer>Dashboard generado para COBAED · Fuente: repositorio GitHub (datos.json) · Plotly.js</footer>
 
 <script>
-/* ============ CONFIGURACIÓN: ARCHIVO DESDE GITHUB ============ */
-// Buscará 'datos.json' en la misma ruta donde se sirve este index.html
-const GITHUB_DATA_URL = 'datos.json'; 
-
-/* ============ Estado global ============ */
-let RAW = [];          // raw normalized rows
-let META = { ciclo: 'Cargando...', fecha: '' };
-const META_PARCIALES = 3;
+/* ============ CONSTANTES ============ */
+const STORAGE_KEY = 'cobaed_planeaciones_v1';
+const META_KEY = 'cobaed_meta_v1';
+// El archivo datos.json debe estar ubicado en la misma carpeta que index.html en el repositorio
+// Ejemplo: /principal/datos.json (si ambas rutas son relativas)
+const GITHUB_DATA_URL = 'datos.json';   // Misma carpeta del sitio (repositorio GitHub)
 
 /* ============ Helpers ============ */
 const norm = s => (s===undefined||s===null)?'':String(s).trim();
 const lower = s => norm(s).toLowerCase();
 
-// Field auto-detection: pick first key that includes any of the patterns
-function pick(row, patterns){
+function pick(row, patterns, opts){
   const keys = Object.keys(row);
+  const exclude = (opts && opts.exclude) || [];
+  const isExcluded = k => exclude.some(x => lower(k).includes(x));
   for(const p of patterns){
-    const exact = keys.find(k => lower(k) === p);
+    const exact = keys.find(k => lower(k) === p && !isExcluded(k));
     if(exact !== undefined) return row[exact];
+  }
+  for(const p of patterns){
+    const k = keys.find(k => lower(k).includes(p) && !isExcluded(k));
+    if(k!==undefined) return row[k];
+  }
+  for(const p of patterns){
     const k = keys.find(k => lower(k).includes(p));
     if(k!==undefined) return row[k];
   }
   return undefined;
-}
-
-function detect(row){
-  return {
-    matricula: pick(row,['matricula','matrícula','clave','id docente','id_docente']),
-    docente:   pick(row,['docente','nombre','profesor','maestro','docente_nombre']),
-    plantel:   pick(row,['plantel','nombreplantel','nombre del plantel','nom plantel','centro','escuela','sede','plantel_nombre']),
-    turno:     pick(row,['turno']),
-    semestre:  pick(row,['semestre','grado']),
-    total:     toNum(pick(row,['no de planeaciones','número de planeaciones','planeaciones registradas','total planeaciones','planeaciones','total'])),
-    p1:        toNum(pick(row,['1er parcial','primer parcial','parcial 1','p1','parcial1'])),
-    p2:        toNum(pick(row,['2do parcial','segundo parcial','parcial 2','p2','parcial2'])),
-    p3:        toNum(pick(row,['3er parcial','tercer parcial','parcial 3','p3','parcial3'])),
-  };
 }
 
 function toNum(v){
@@ -282,115 +276,144 @@ function toNum(v){
   return isNaN(n)?0:n;
 }
 
-/* ============ Carga desde GitHub ============ */
+function detect(row){
+  const d = {
+    matricula: pick(row,['matricula','matrícula','clave','id docente','id_docente']),
+    docente:   pick(row,['docente','nombre','profesor','maestro'],{exclude:['id','clave']}),
+    plantel:   pick(row,['nombreplantel','nombre del plantel','nombre plantel','nom plantel','plantel','centro','escuela','sede'],{exclude:['id','clave','cct']}),
+    turno:     pick(row,['turno']),
+    semestre:  pick(row,['semestre','grado']),
+    totalT: toNum(pick(row,['planeaciones registradas','no de planeaciones registradas','número de planeaciones registradas'])),
+    p1T:    toNum(pick(row,['1er parcial total','primer parcial total'])),
+    p2T:    toNum(pick(row,['2do parcial total','segundo parcial total'])),
+    p3T:    toNum(pick(row,['3er parcial total','tercer parcial total'])),
+    totalA: toNum(pick(row,['planeaciones aprobadas','no de planeaciones aprobadas','número de planeaciones aprobadas'])),
+    p1A:    toNum(pick(row,['1er parcial aprobadas','primer parcial aprobadas'])),
+    p2A:    toNum(pick(row,['2do parcial aprobadas','segundo parcial aprobadas'])),
+    p3A:    toNum(pick(row,['3er parcial aprobadas','tercer parcial aprobadas'])),
+  };
+  const legacyTotal = toNum(pick(row,['no de planeaciones','número de planeaciones','total planeaciones']));
+  const legacyP1 = toNum(pick(row,['1er parcial','primer parcial','parcial 1','p1']));
+  const legacyP2 = toNum(pick(row,['2do parcial','segundo parcial','parcial 2','p2']));
+  const legacyP3 = toNum(pick(row,['3er parcial','tercer parcial','parcial 3','p3']));
+  if(!d.totalT) d.totalT = legacyTotal || (d.p1T+d.p2T+d.p3T) || (legacyP1+legacyP2+legacyP3);
+  if(!d.p1T) d.p1T = legacyP1;
+  if(!d.p2T) d.p2T = legacyP2;
+  if(!d.p3T) d.p3T = legacyP3;
+  if(!d.totalA && !d.p1A && !d.p2A && !d.p3A){
+    d.totalA=d.totalT; d.p1A=d.p1T; d.p2A=d.p2T; d.p3A=d.p3T;
+  } else if(!d.totalA){
+    d.totalA = d.p1A+d.p2A+d.p3A;
+  }
+  d.total=d.totalT; d.p1=d.p1T; d.p2=d.p2T; d.p3=d.p3T;
+  return d;
+}
+
+/* ============ Estado global ============ */
+let RAW = [];
+let META = { ciclo: "Repositorio GitHub", fecha: "" };
+const META_PARCIALES = 3;
+
+function saveToStorage(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(RAW));
+  localStorage.setItem(META_KEY, JSON.stringify(META));
+}
+
+function loadFromStorage(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const meta = localStorage.getItem(META_KEY);
+    if(raw){ RAW = JSON.parse(raw); }
+    if(meta){ META = JSON.parse(meta); }
+    return RAW.length > 0;
+  }catch(e){console.warn(e); return false;}
+}
+
+/* ============ Carga remota desde GitHub (datos.json misma ruta) ============ */
 async function fetchDataFromGitHub(){
-  const loadingDiv = document.getElementById('loadingIndicator');
-  const emptyDiv = document.getElementById('emptyState');
-  const errorDiv = document.getElementById('errorState');
+  const loaderDiv = document.getElementById('loaderData');
   const dashboardDiv = document.getElementById('dashboard');
-  const infoCard = document.getElementById('infoCard');
+  const emptyDiv = document.getElementById('emptyState');
+  const uploadCard = document.getElementById('uploadCard');
   
-  // Mostrar loading
-  loadingDiv.style.display = 'block';
-  emptyDiv.style.display = 'none';
-  errorDiv.style.display = 'none';
+  loaderDiv.style.display = 'flex';
   dashboardDiv.style.display = 'none';
-  infoCard.style.display = 'none';
+  emptyDiv.style.display = 'none';
+  uploadCard.style.display = 'none';
   
   try {
-    const response = await fetch(GITHUB_DATA_URL, {
-      cache: 'no-cache',
-      headers: { 'Cache-Control': 'no-cache' }
+    const response = await fetch(GITHUB_DATA_URL, { cache: 'no-store' });
+    if(!response.ok) throw new Error(`HTTP ${response.status}: No se pudo obtener datos.json en ${GITHUB_DATA_URL}`);
+    const data = await response.json();
+    let rawData = Array.isArray(data) ? data : (Object.values(data).find(v=>Array.isArray(v)) || []);
+    if(!rawData.length) throw new Error('El JSON no contiene un arreglo de registros');
+    
+    RAW = rawData.map(r => {
+      const normFields = detect(r);
+      return {...r, _n: normFields};
     });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: No se pudo obtener datos.json`);
-    }
-    
-    let data = await response.json();
-    
-    // Si es un objeto con un arreglo dentro, extraerlo
-    if(!Array.isArray(data)){
-      const arr = Object.values(data).find(v=>Array.isArray(v));
-      if(arr) data = arr;
-      else throw new Error('El JSON debe ser un arreglo de registros');
-    }
-    
-    // Procesar cada registro
-    RAW = data.map(r => {
-      const d = detect(r);
-      // Si no hay total pero sí parciales, calcular total como suma de parciales
-      if(!d.total && (d.p1 || d.p2 || d.p3)) d.total = (d.p1||0)+(d.p2||0)+(d.p3||0);
-      // Si no hay total y tampoco parciales, total = 0
-      if(!d.total) d.total = 0;
-      return {...r, _n: d};
-    });
-    
-    // Generar metadatos
-    const now = new Date();
     META = {
-      ciclo: `Semestre ${new Date().getFullYear()}-${new Date().getFullYear()+1}`,
-      fecha: now.toLocaleString('es-MX'),
-      registros: RAW.length
+      ciclo: "Datos desde repositorio GitHub",
+      fecha: new Date().toLocaleString('es-MX'),
+      origen: GITHUB_DATA_URL
     };
-    
-    // Ocultar loading y mostrar dashboard
-    loadingDiv.style.display = 'none';
-    dashboardDiv.style.display = 'block';
-    infoCard.style.display = 'flex';
-    emptyDiv.style.display = 'none';
-    errorDiv.style.display = 'none';
-    
-    // Actualizar header
-    document.getElementById('cicloEscolar').textContent = META.ciclo;
-    document.getElementById('lastUpdate').textContent = META.fecha;
-    document.getElementById('totalReg').textContent = RAW.length;
-    
-    // Renderizar todo el dashboard
-    renderDashboard();
-    
-  } catch (error) {
-    console.error('Error cargando datos:', error);
-    loadingDiv.style.display = 'none';
-    emptyDiv.style.display = 'none';
-    errorDiv.style.display = 'block';
-    dashboardDiv.style.display = 'none';
-    infoCard.style.display = 'none';
-    
-    document.getElementById('cicloEscolar').textContent = 'Error';
-    document.getElementById('lastUpdate').textContent = '—';
-    document.getElementById('totalReg').textContent = '0';
+    saveToStorage();
+    loaderDiv.style.display = 'none';
+    render();
+  } catch(err) {
+    console.error(err);
+    loaderDiv.style.display = 'none';
+    // fallback: intentar cargar desde localStorage si existe algo
+    const hasStored = loadFromStorage();
+    if(hasStored && RAW.length > 0) {
+      META.fecha = META.fecha || `Última copia local: ${new Date().toLocaleString('es-MX')}`;
+      render();
+    } else {
+      emptyDiv.style.display = 'block';
+      uploadCard.style.display = 'flex';
+      document.getElementById('uploadCard').style.display = 'flex';
+      document.getElementById('emptyState').style.display = 'block';
+    }
   }
 }
 
-/* ============ Filtros y renderizado ============ */
+/* ============ Carga local manual (archivo) ============ */
+function handleLocalFile(file){
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try{
+      let data = JSON.parse(ev.target.result);
+      let rawData = Array.isArray(data) ? data : (Object.values(data).find(v=>Array.isArray(v)) || []);
+      if(!rawData.length) throw new Error('Formato inválido: se esperaba arreglo');
+      RAW = rawData.map(r => {
+        const normFields = detect(r);
+        return {...r, _n: normFields};
+      });
+      META = { ciclo: file.name.replace(/\.json$/i,''), fecha: new Date().toLocaleString('es-MX'), origen: 'local' };
+      saveToStorage();
+      document.getElementById('loaderData').style.display = 'none';
+      render();
+    }catch(err){ alert('Error al leer JSON local: '+err.message); }
+  };
+  reader.readAsText(file);
+}
+
+/* ============ Filtros y renderizado completo ============ */
 function uniqueSorted(arr){return [...new Set(arr.filter(v=>v!==''&&v!==undefined&&v!==null))].sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true}))}
 
 function populateFilters(){
-  if(!RAW.length) return;
   const planteles = uniqueSorted(RAW.map(r=>norm(r._n.plantel)));
   const docentes  = uniqueSorted(RAW.map(r=>norm(r._n.docente)));
   const turnos    = uniqueSorted(RAW.map(r=>norm(r._n.turno)));
-  fillSelect('fPlantel', planteles);
-  fillSelect('fDocente', docentes);
-  fillSelect('fTurno', turnos);
-}
-
-function fillSelect(id, vals){
-  const sel = document.getElementById(id);
-  if(!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Todos</option>'+vals.map(v=>`<option>${escapeHtml(String(v))}</option>`).join('');
-  sel.value = cur;
-}
-
-function escapeHtml(str){
-  return str.replace(/[&<>]/g, function(m){
-    if(m === '&') return '&amp;';
-    if(m === '<') return '&lt;';
-    if(m === '>') return '&gt;';
-    return m;
-  });
+  const fill = (id,vals) => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todos</option>'+vals.map(v=>`<option>${v}</option>`).join('');
+    sel.value = cur;
+  };
+  fill('fPlantel',planteles);
+  fill('fDocente',docentes);
+  fill('fTurno',turnos);
 }
 
 function applyFilters(rows){
@@ -398,6 +421,7 @@ function applyFilters(rows){
   const fd = document.getElementById('fDocente')?.value || '';
   const ft = document.getElementById('fTurno')?.value || '';
   const fpr = document.getElementById('fParcial')?.value || '';
+  const fa = document.getElementById('fAprob')?.value || '';
   return rows.filter(r=>{
     const n=r._n;
     if(fp && norm(n.plantel)!==fp) return false;
@@ -407,11 +431,11 @@ function applyFilters(rows){
     if(fpr==='2' && !(n.p2>0)) return false;
     if(fpr==='3' && !(n.p3>0)) return false;
     if(fpr==='0' && (n.total>0)) return false;
+    if(fa==='si' && !((n.totalA||0)>0)) return false;
     return true;
   });
 }
 
-/* ============ Plotly theme ============ */
 const layoutBase = {
   paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
   font:{color:'#e6ecf5', family:'Inter, system-ui, sans-serif', size:12},
@@ -425,24 +449,36 @@ const cfg = {displaylogo:false, responsive:true, modeBarButtonsToRemove:['lasso2
 
 function statusOf(pct){
   if(pct>=80) return {label:'Alto', cls:'b-good', color:'#10b981'};
-  if(pct>=50) return {label:'Medio', cls:'b-warn', color:'#f59e0b'};
+  if(pct>=50) return {label:'Medio',cls:'b-warn', color:'#f59e0b'};
   return {label:'Bajo', cls:'b-bad', color:'#ef4444'};
 }
 
-function groupBy(arr,fn){return arr.reduce((m,x)=>{const k=fn(x);(m[k]=m[k]||[]).push(x);return m;},{})}
+function groupBy(arr,fn){return arr.reduce((m,x)=>{const k=fn(x);(m[k]=m[k]||[]).push(x);return m;},{});}
 
-function renderDashboard(){
-  if(!RAW.length) return;
+function render(){
+  if(!RAW.length){
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('uploadCard').style.display = 'flex';
+    document.getElementById('loaderData').style.display = 'none';
+    document.getElementById('totalReg').textContent = '0';
+    return;
+  }
+  const modo = document.getElementById('fModo')?.value || 'total';
+  const suf = modo==='aprobadas' ? 'A' : 'T';
+  RAW.forEach(r=>{ const n=r._n; n.total=n['total'+suf]; n.p1=n['p1'+suf]; n.p2=n['p2'+suf]; n.p3=n['p3'+suf]; });
   
   populateFilters();
   const rows = applyFilters(RAW);
-  if(!rows.length){
-    // Mostrar vacío en gráficas si no hay resultados
-    document.getElementById('kpis').innerHTML = '<div class="kpi"><div class="label">Sin datos</div><div class="value">0</div></div>';
-    return;
-  }
   
-  /* KPIs */
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('uploadCard').style.display = 'none';
+  document.getElementById('loaderData').style.display = 'none';
+  document.getElementById('cicloEscolar').textContent = META.ciclo || 'COBAED';
+  document.getElementById('lastUpdate').textContent = META.fecha || new Date().toLocaleString('es-MX');
+  document.getElementById('totalReg').textContent = RAW.length;
+  
   const totalDocentes = new Set(rows.map(r=>norm(r._n.matricula)||norm(r._n.docente))).size;
   const totalPlan = rows.reduce((a,r)=>a+r._n.total,0);
   const promedio = totalDocentes? (totalPlan/totalDocentes):0;
@@ -453,12 +489,12 @@ function renderDashboard(){
   const esperado = totalDocentes*META_PARCIALES;
   const cumplidos = rows.reduce((a,r)=>a+(r._n.p1>0?1:0)+(r._n.p2>0?1:0)+(r._n.p3>0?1:0),0);
   const pctCumpl = esperado? (cumplidos/esperado*100):0;
-  const plantelesGroup = groupBy(rows,r=>norm(r._n.plantel)||'(sin plantel)');
-  const criticos = Object.entries(plantelesGroup).filter(([k,v])=>{
+  const plantelesMap = groupBy(rows,r=>norm(r._n.plantel)||'(sin plantel)');
+  const criticos = Object.entries(plantelesMap).filter(([k,v])=>{
     const esp=v.length*META_PARCIALES; const cum=v.reduce((a,r)=>a+(r._n.p1>0?1:0)+(r._n.p2>0?1:0)+(r._n.p3>0?1:0),0);
     return esp && (cum/esp*100)<70;
   }).length;
-
+  
   const kpis = [
     {l:'Total docentes',v:totalDocentes.toLocaleString('es-MX')},
     {l:'Planeaciones registradas',v:totalPlan.toLocaleString('es-MX')},
@@ -470,138 +506,62 @@ function renderDashboard(){
     {l:'Total 2do parcial',v:totalP2.toLocaleString('es-MX')},
     {l:'Total 3er parcial',v:totalP3.toLocaleString('es-MX')},
   ];
-  document.getElementById('kpis').innerHTML = kpis.map(k=>`
-    <div class="kpi"><div class="label">${k.l}</div><div class="value">${k.v}</div>${k.s?`<div class="sub">${k.s}</div>`:''}</div>
-  `).join('');
-
-  /* Chart: parciales */
+  document.getElementById('kpis').innerHTML = kpis.map(k=>`<div class="kpi"><div class="label">${k.l}</div><div class="value">${k.v}</div>${k.s?`<div class="sub">${k.s}</div>`:''}</div>`).join('');
+  
   Plotly.newPlot('chartParciales',[{
     type:'bar', x:['1er Parcial','2do Parcial','3er Parcial'], y:[totalP1,totalP2,totalP3],
     marker:{color:['#6366f1','#22d3ee','#10b981']},
     text:[totalP1,totalP2,totalP3].map(n=>n.toLocaleString('es-MX')), textposition:'outside'
   }],{...layoutBase,yaxis:{...layoutBase.yaxis,title:'Planeaciones'}},cfg);
-
-  /* Gauge */
+  
   Plotly.newPlot('chartGauge',[{
     type:'indicator', mode:'gauge+number', value:pctCumpl,
     number:{suffix:'%',font:{size:36,color:'#e6ecf5'}},
-    gauge:{
-      axis:{range:[0,100],tickcolor:'#94a3b8'},
-      bar:{color:pctCumpl>=80?'#10b981':pctCumpl>=50?'#f59e0b':'#ef4444'},
-      bgcolor:'#172238',borderwidth:0,
-      steps:[
-        {range:[0,50],color:'rgba(239,68,68,.25)'},
-        {range:[50,80],color:'rgba(245,158,11,.25)'},
-        {range:[80,100],color:'rgba(16,185,129,.25)'}
-      ]
-    }
+    gauge:{axis:{range:[0,100],tickcolor:'#94a3b8'},bar:{color:pctCumpl>=80?'#10b981':pctCumpl>=50?'#f59e0b':'#ef4444'},bgcolor:'#172238',borderwidth:0,
+      steps:[{range:[0,50],color:'rgba(239,68,68,.25)'},{range:[50,80],color:'rgba(245,158,11,.25)'},{range:[80,100],color:'rgba(16,185,129,.25)'}]}
   }],{...layoutBase,margin:{t:30,b:10,l:20,r:20}},cfg);
-
-  /* Turno donut */
+  
   const turnos = groupBy(rows,r=>norm(r._n.turno)||'(sin turno)');
-  Plotly.newPlot('chartTurno',[{
-    type:'pie', hole:.55,
-    labels:Object.keys(turnos), values:Object.values(turnos).map(v=>v.length),
-    textinfo:'label+percent', marker:{colors:['#6366f1','#22d3ee','#f59e0b','#a78bfa']}
-  }],{...layoutBase,showlegend:true},cfg);
-
-  /* Ranking planteles */
-  const rank = Object.entries(plantelesGroup).map(([p,arr])=>{
-    const plan = arr.reduce((a,r)=>a+r._n.total,0);
-    return {p, plan, doc:arr.length};
-  }).sort((a,b)=>b.plan-a.plan).slice(0,20);
-  Plotly.newPlot('chartRanking',[{
-    type:'bar', orientation:'h',
-    y:rank.map(r=>r.p).reverse(), x:rank.map(r=>r.plan).reverse(),
-    marker:{color:rank.map(r=>r.plan).reverse(),colorscale:[[0,'#22d3ee'],[1,'#6366f1']]},
-    text:rank.map(r=>r.plan).reverse(), textposition:'outside'
-  }],{...layoutBase,margin:{l:200,r:40,t:20,b:40},xaxis:{...layoutBase.xaxis,title:'Planeaciones'}},cfg);
-
-  /* Heatmap: planteles x parciales en % */
-  const plArr = Object.entries(plantelesGroup).sort((a,b)=>a[0].localeCompare(b[0]));
-  const z = plArr.map(([_,arr])=>{
-    const total = arr.length;
-    return [arr.filter(r=>r._n.p1>0).length/total*100,
-            arr.filter(r=>r._n.p2>0).length/total*100,
-            arr.filter(r=>r._n.p3>0).length/total*100];
-  });
-  Plotly.newPlot('chartHeatmap',[{
-    type:'heatmap', z, x:['1er P.','2do P.','3er P.'], y:plArr.map(p=>p[0]),
-    colorscale:[[0,'#ef4444'],[0.5,'#f59e0b'],[1,'#10b981']],
-    zmin:0,zmax:100, hovertemplate:'%{y} · %{x}: %{z:.1f}%<extra></extra>',
-    colorbar:{title:'%',tickfont:{color:'#e6ecf5'}}
-  }],{...layoutBase,margin:{l:200,r:60,t:20,b:40}},cfg);
-
-  /* Tabla planteles */
-  const tblP = plArr.map(([p,arr])=>{
-    const plan = arr.reduce((a,r)=>a+r._n.total,0);
-    const p1=arr.reduce((a,r)=>a+r._n.p1,0), p2=arr.reduce((a,r)=>a+r._n.p2,0), p3=arr.reduce((a,r)=>a+r._n.p3,0);
-    const esp = arr.length*META_PARCIALES;
-    const cum = arr.reduce((a,r)=>a+(r._n.p1>0?1:0)+(r._n.p2>0?1:0)+(r._n.p3>0?1:0),0);
-    const pct = esp? cum/esp*100:0;
-    return {p,doc:arr.length,plan,p1,p2,p3,pct};
-  }).sort((a,b)=>b.pct-a.pct);
-  document.querySelector('#tblPlanteles tbody').innerHTML = tblP.map(r=>{
-    const st = statusOf(r.pct);
-    return `<tr><td>${escapeHtml(r.p)}</td><td>${r.doc}</td><td>${r.plan}</td><td>${r.p1}</td><td>${r.p2}</td><td>${r.p3}</td>
-      <td><b style="color:${st.color}">${r.pct.toFixed(1)}%</b></td>
-      <td><span class="badge ${st.cls}">${st.label}</span></td></tr>`;
-  }).join('');
-
-  /* Top docentes */
-  const docs = rows.slice().sort((a,b)=>b._n.total-a._n.total).slice(0,15);
-  document.querySelector('#tblTopDocentes tbody').innerHTML = docs.map((r,i)=>{
-    const n=r._n; const parc=(n.p1>0?1:0)+(n.p2>0?1:0)+(n.p3>0?1:0);
-    return `<tr><td>${i+1}</td><td>${escapeHtml(norm(n.docente)||'—')}</td><td>${escapeHtml(norm(n.plantel)||'—')}</td>
-      <td><b>${n.total}</b></td><td>${parc}/3</td></tr>`;
-  }).join('');
-
-  /* Rezagados */
+  Plotly.newPlot('chartTurno',[{type:'pie', hole:.55, labels:Object.keys(turnos), values:Object.values(turnos).map(v=>v.length), textinfo:'label+percent', marker:{colors:['#6366f1','#22d3ee','#f59e0b','#a78bfa']}}],{...layoutBase,showlegend:true},cfg);
+  
+  const rank = Object.entries(plantelesMap).map(([p,arr])=>({p, plan:arr.reduce((a,r)=>a+r._n.total,0), doc:arr.length})).sort((a,b)=>b.plan-a.plan).slice(0,20);
+  Plotly.newPlot('chartRanking',[{type:'bar', orientation:'h', y:rank.map(r=>r.p).reverse(), x:rank.map(r=>r.plan).reverse(), marker:{color:rank.map(r=>r.plan).reverse(),colorscale:[[0,'#22d3ee'],[1,'#6366f1']]}, text:rank.map(r=>r.plan).reverse(), textposition:'outside'}],{...layoutBase,margin:{l:200,r:40,t:20,b:40},xaxis:{...layoutBase.xaxis,title:'Planeaciones'}},cfg);
+  
+  const plArr = Object.entries(plantelesMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  const z = plArr.map(([_,arr])=>[arr.filter(r=>r._n.p1>0).length/arr.length*100, arr.filter(r=>r._n.p2>0).length/arr.length*100, arr.filter(r=>r._n.p3>0).length/arr.length*100]);
+  Plotly.newPlot('chartHeatmap',[{type:'heatmap', z, x:['1er P.','2do P.','3er P.'], y:plArr.map(p=>p[0]), colorscale:[[0,'#ef4444'],[0.5,'#f59e0b'],[1,'#10b981']], zmin:0,zmax:100, colorbar:{title:'%',tickfont:{color:'#e6ecf5'}}}],{...layoutBase,margin:{l:200,r:60,t:20,b:40}},cfg);
+  
+  const tblP = plArr.map(([p,arr])=>({p, doc:arr.length, plan:arr.reduce((a,r)=>a+r._n.total,0), p1:arr.reduce((a,r)=>a+r._n.p1,0), p2:arr.reduce((a,r)=>a+r._n.p2,0), p3:arr.reduce((a,r)=>a+r._n.p3,0), pct:(arr.length*META_PARCIALES)? (arr.reduce((a,r)=>a+(r._n.p1>0?1:0)+(r._n.p2>0?1:0)+(r._n.p3>0?1:0),0)/(arr.length*META_PARCIALES)*100):0})).sort((a,b)=>b.pct-a.pct);
+  document.querySelector('#tblPlanteles tbody').innerHTML = tblP.map(r=>{const st=statusOf(r.pct); return `<tr><td>${r.p}</td><td>${r.doc}</td><td>${r.plan}</td><td>${r.p1}</td><td>${r.p2}</td><td>${r.p3}</td><td><b style="color:${st.color}">${r.pct.toFixed(1)}%</b></td><td><span class="badge ${st.cls}">${st.label}</span></td></tr>`;}).join('');
+  
+  const docsTop = rows.slice().sort((a,b)=>b._n.total-a._n.total).slice(0,15);
+  document.querySelector('#tblTopDocentes tbody').innerHTML = docsTop.map((r,i)=>{const n=r._n; const parc=(n.p1>0?1:0)+(n.p2>0?1:0)+(n.p3>0?1:0); return `<tr><td>${i+1}</td><td>${norm(n.docente)||'—'}</td><td>${norm(n.plantel)||'—'}</td><td><b>${n.total}</b></td><td>${parc}/3</td></tr>`;}).join('');
+  
   const rez = rows.filter(r=>{const n=r._n;return !(n.p1>0&&n.p2>0&&n.p3>0)}).slice(0,200);
-  document.querySelector('#tblRezagos tbody').innerHTML = rez.map(r=>{
-    const n=r._n; const parc=(n.p1>0?1:0)+(n.p2>0?1:0)+(n.p3>0?1:0);
-    const st = statusOf(parc/3*100);
-    const chk = v=>v>0?'<span style="color:#10b981">●</span>':'<span style="color:#ef4444">○</span>';
-    return `<tr><td>${escapeHtml(norm(n.docente)||'—')}</td><td>${escapeHtml(norm(n.plantel)||'—')}</td>
-      <td>${chk(n.p1)}</td><td>${chk(n.p2)}</td><td>${chk(n.p3)}</td>
-      <td><span class="badge ${st.cls}">${st.label}</span></td></tr>`;
-  }).join('');
-
-  /* Tendencia */
-  Plotly.newPlot('chartTendencia',[{
-    type:'scatter', mode:'lines+markers+text', x:['1er P.','2do P.','3er P.'], y:[totalP1,totalP2,totalP3],
-    line:{color:'#22d3ee',width:3,shape:'spline'},
-    marker:{size:14,color:'#6366f1',line:{color:'#fff',width:2}},
-    text:[totalP1,totalP2,totalP3], textposition:'top center',
-    fill:'tozeroy', fillcolor:'rgba(99,102,241,.15)'
-  }],{...layoutBase,yaxis:{...layoutBase.yaxis,title:'Planeaciones capturadas'}},cfg);
-
-  /* Rezago — barras horizontales semáforo */
+  document.querySelector('#tblRezagos tbody').innerHTML = rez.map(r=>{const n=r._n; const parc=(n.p1>0?1:0)+(n.p2>0?1:0)+(n.p3>0?1:0); const st=statusOf(parc/3*100); const chk=v=>v>0?'<span style="color:#10b981">●</span>':'<span style="color:#ef4444">○</span>'; return `<tr><td>${norm(n.docente)||'—'}</td><td>${norm(n.plantel)||'—'}</td><td>${chk(n.p1)}</td><td>${chk(n.p2)}</td><td>${chk(n.p3)}</td><td><span class="badge ${st.cls}">${st.label}</span></td></tr>`;}).join('');
+  
+  Plotly.newPlot('chartTendencia',[{type:'scatter', mode:'lines+markers+text', x:['1er P.','2do P.','3er P.'], y:[totalP1,totalP2,totalP3], line:{color:'#22d3ee',width:3,shape:'spline'}, marker:{size:14,color:'#6366f1',line:{color:'#fff',width:2}}, text:[totalP1,totalP2,totalP3], textposition:'top center', fill:'tozeroy', fillcolor:'rgba(99,102,241,.15)'}],{...layoutBase,yaxis:{...layoutBase.yaxis,title:'Planeaciones capturadas'}},cfg);
+  
   const totalDoc = rows.length||1;
   const pctP1 = rows.filter(r=>r._n.p1>0).length/totalDoc*100;
   const pctP2 = rows.filter(r=>r._n.p2>0).length/totalDoc*100;
   const pctP3 = rows.filter(r=>r._n.p3>0).length/totalDoc*100;
-  const vals=[pctP1,pctP2,pctP3];
-  Plotly.newPlot('chartRezago',[{
-    type:'bar', orientation:'h', x:vals, y:['1er Parcial','2do Parcial','3er Parcial'],
-    marker:{color:vals.map(v=>v>=80?'#10b981':v>=50?'#f59e0b':'#ef4444')},
-    text:vals.map(v=>v.toFixed(1)+'%'), textposition:'outside'
-  }],{...layoutBase,xaxis:{...layoutBase.xaxis,range:[0,110],title:'% docentes con captura'}},cfg);
+  Plotly.newPlot('chartRezago',[{type:'bar', orientation:'h', x:[pctP1,pctP2,pctP3], y:['1er Parcial','2do Parcial','3er Parcial'], marker:{color:[pctP1,pctP2,pctP3].map(v=>v>=80?'#10b981':v>=50?'#f59e0b':'#ef4444')}, text:[pctP1,pctP2,pctP3].map(v=>v.toFixed(1)+'%'), textposition:'outside'}],{...layoutBase,xaxis:{...layoutBase.xaxis,range:[0,110],title:'% docentes con captura'}},cfg);
 }
 
 /* ============ Eventos ============ */
-function bindEvents(){
-  document.getElementById('refreshBtn')?.addEventListener('click', fetchDataFromGitHub);
-  document.getElementById('manualRefreshBtn')?.addEventListener('click', fetchDataFromGitHub);
-  document.getElementById('retryBtn')?.addEventListener('click', fetchDataFromGitHub);
-  ['fPlantel','fDocente','fTurno','fParcial'].forEach(id=>{
-    const el = document.getElementById(id);
-    if(el) el.addEventListener('change', () => renderDashboard());
-  });
-}
+document.getElementById('refreshBtn').addEventListener('click', () => fetchDataFromGitHub());
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if(!confirm('¿Borrar los datos almacenados localmente?')) return;
+  localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(META_KEY);
+  RAW = []; META = {};
+  fetchDataFromGitHub();
+});
+document.getElementById('uploadBtn').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = (e) => { if(e.target.files[0]) handleLocalFile(e.target.files[0]); };
+['fPlantel','fDocente','fTurno','fParcial','fModo','fAprob'].forEach(id=>{ const el = document.getElementById(id); if(el) el.addEventListener('change', () => render()); });
 
-/* ============ Inicialización ============ */
-bindEvents();
+/* ============ Inicio: cargar desde GitHub automáticamente ============ */
 fetchDataFromGitHub();
 </script>
 </body>
